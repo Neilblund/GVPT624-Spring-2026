@@ -10,11 +10,41 @@ whan_data <- get_dataframe_by_name(
   .f = haven::read_dta,
   server = "dataverse.harvard.edu")
 whan_data$warnumber<-factor(whan_data$warnumber)
-
 whan_data$ghdumr<- factor(whan_data$ghdumr, levels=c(0, 1), labels=c("Non-signatory", "Signatory"))
 whan_data$raceorrel <- factor(whan_data$raceorrel, levels=c(0, 1), labels=c("No", "Yes"))
 whan_data$waraims2<-factor(whan_data$waraims2, levels=c(0, 1), labels=c("Other", "Conquest/Regime change"))
-# first model
+whan_data$demdum<-factor(whan_data$demdum, levels=c(0, 1), labels=c("Non-Democracy", "Democracy"))
+whan_data$apcdum<-factor(whan_data$apcdum, levels=c(0, 1), labels=c("No", "Yes"))
+
+map<-c(
+  lnnoncom = "Non-Combatant Deaths (logged)",
+  # International Law: 
+  ghdumr  = "Treaty Status",
+  brat = "Mutual Treaty Ratification",
+  demtreat = "Treaty * Regime Type",
+  # Alternative Hypotheses
+  polity = "Regime Type",
+  demdum = "Regime Type dummy",
+  apcdem = "Regime Type * Strategy",
+  raceorrel = 'Racial/Religious Conflict',
+  # Strategic Hypotheses
+  apc = "Attrition or Counterinsurgency Strategy",
+  apcdum = "Attrition or Counterinsurgency Strategy dummy",
+  `waraims2` = "War Aims",
+  duration = "War Duration",
+  # controls
+  finalprop = "Relative Capabilities",
+  lnnewpop = "Adversary Population Size (logged)"
+)
+
+var_label(whan_data) <- as.list(map)
+
+
+datasummary_skim(whan_data)
+datasummary_skim(whan_data, by="ghdumr")
+
+
+
 model1 <- lm(lnnoncom ~ ghdumr + polity + raceorrel + apc + waraims2 + duration + finalprop  + lnnewpop,
              data = whan_data
 )
@@ -36,30 +66,6 @@ model4 <- lm(
 
 #Replicating the main table (more or less)-----
 
-# A mapping of coefficient names
-
-map<-c(
-  lnnoncom = "Non-Combatant Deaths (logged)",
-  # International Law: 
-  ghdumrSignatory  = "Treaty Status",
-  brat = "Mutual Treaty Ratification",
-  demtreat = "Treaty * Regime Type",
-  # Alternative Hypotheses
-  polity = "Regime Type",
-  demdum = "Regime Type",
-  apcdem = "Regime Type * Strategy",
-  raceorrel = 'Racial/Religious Conflict',
-  # Strategic Hypotheses
-  apc = "Attrition or Counterinsurgency Strategy",
-  apcdum = "Attrition or Counterinsurgency Strategy",
-  `waraims2Conquest/Regime change` = "War Aims",
-  duration = "War Duration",
-  # controls
-  finalprop = "Relative Capabilities",
-  lnnewpop = "Adversary Population Size (logged)",
-  `(Intercept)` = "Constant"
-)
-
 model_list <- list("Model 1 (Baseline)" = model1, 
                    "Model 2 (Mutual Ratification)" = model2, 
                    "Model 3 (Regime Type * Treaty)" = model3, 
@@ -78,7 +84,7 @@ ms<-modelsummary(
   estimate = "{estimate} ({statistic})",
   statistic = NULL,
   #statistic = c("std.error", "({p.value})"),
-  coef_map = map,
+ coef_rename = TRUE,
   gof_map = c("nobs", "r.squared", "bic", 'aic'),
   vcov = "bootstrap",
   R = 1000,
@@ -87,22 +93,47 @@ ms<-modelsummary(
  notes = 'T-statistics in parentheses'
 )
 
+map<-c(
+  lnnoncom = "Non-Combatant Deaths (logged)",
+  # International Law: 
+  ghdumr  = "Treaty Status",
+  brat = "Mutual Treaty Ratification",
+  demtreat = "Treaty * Regime Type",
+  # Alternative Hypotheses
+  polity = "Regime Type",
+  demdum = "Regime Type",
+  apcdem = "Regime Type * Strategy",
+  raceorrel = 'Racial/Religious Conflict',
+  # Strategic Hypotheses
+  apc = "Attrition or Counterinsurgency Strategy",
+  apcdum = "Attrition or Counterinsurgency Strategy",
+  `waraims2` = "War Aims",
+  duration = "War Duration",
+  # controls
+  finalprop = "Relative Capabilities",
+  lnnewpop = "Adversary Population Size (logged)"
+)
+
 ms|>
-  tab_row_group(label = html("<b></b>"),
-                rows=c(12:16)
+  tab_row_group(label=html('<b></b>'),
+                rows = c(15:18),
   )|>
+  tab_row_group(label=html('<b></b>'),
+                rows = c(1),
+  )|>
+
   tab_row_group(label = html("<b>Controls</b>"),
-                rows=c(10,11)
+                rows=c(8,9)
   )|>
 
   tab_row_group(label = html("<b>Strategic Hypotheses</b>"),
-                rows=c(7,8, 9)
+                rows=c(5,6, 7, 13, 14)
   )|>
   tab_row_group(label = html("<b>Alternative Hypotheses</b>"),
-                rows=c(4,5, 6)
+                rows=c(3,12, 4)
   )|>
   tab_row_group(label=html('<b>International Law</b>'),
-                rows = c(1,2,3),
+                rows = c(2,10,11),
   )|>
   tab_options(row_group.as_column = TRUE)|>
   
@@ -143,20 +174,29 @@ plot_predictions(model1,  condition=list('duration', 'ghdumr'),
 
 
 #Join significance of the alternative hypothesis coefficients----
-
-
-model0 <- lm(lnnoncom ~ ghdumr  + apc + waraims2 + duration + finalprop  + lnnewpop,
+# The three variables in the "alternative hypotheses" sections are individually
+# non-significant. Is it possible that they're jointly significant?
+model_restricted <- lm(
+  lnnoncom ~ ghdumr + apcdum + waraims2 + duration + finalprop  + lnnewpop,
              data = whan_data
 )
 
-compare_performance(model0, model1)
-# f-test for nested models, the null hypothesis here is that model1 is no better than model0
-anova(model0, model1)
+model_full <- lm(
+  lnnoncom ~ ghdumr + demdum + apcdem +  raceorrel + apcdum + waraims2 + duration + finalprop  + lnnewpop,
+  data = whan_data
+)
 
 
-# Prediction checks ----
+# comparing the performance here doesn't exactly bode well for the full model:
+compare_performance(model_restricted, model_full)
+# f-test for nested models, the null hypothesis here is that model_full is no
+# better than model_restricted
+anova(model_restricted, model_full)
+
+
+# model checks ----
 # Note the posterior predictive check in particular: 
-check_model(model1)
+check_model(model_full)
 
 
 
@@ -171,13 +211,16 @@ plot(density(whan_data$lnnoncom))
 # converting the logged civilian deaths back to counts. 
 whan_data$counts <- round(exp(whan_data$lnnoncom)-1)
 
-whan_data|>
+
+# examining the correlates of zero counts:
+correlations<-whan_data|>
   mutate(zeros = counts ==0 )|>
   mutate(ghdumr =as.numeric(ghdumr), 
          raceorrel = as.numeric(raceorrel),
          waraims2 = as.numeric(waraims2)
          )|>
   select(zeros, 
+         counts,
          ghdumr , 
          polity ,
          raceorrel ,
@@ -186,36 +229,49 @@ whan_data|>
          finalprop  , 
          lnnewpop )|>
   cor()
+library(ggcorrplot)
+ggcorrplot(correlations, type='lower')
 
 
-whan_data|>
-  group_by(waraims2)|>
-  summarise(props  = mean(counts==0))
+
+glm( counts==0 ~ waraims2 +finalprop +apcdum, family='binomial',data=whan_data)|>
+  summary()
+
 
 
 library(glmmTMB)
 library(parameters)
 
-
+# glm.nb from the MASS package had convergence issues, so I'm using glmmTMB here:
 form<-formula(counts ~ ghdumr + polity + raceorrel + apc + waraims2  + finalprop  + 
-                lnnewpop +offset(log(duration))) 
+                lnnewpop + 
+                scale(duration) )
 
 negbinmodel <- glmmTMB(
   form,
-  ziformula = ~ 0,
+  ziformula = ~ 0, # assuming no zero inflation
   data = whan_data,
   family = nbinom1(link = 'log')
 )
 
+summary(negbinmodel)
+check_model(negbinmodel)
+
+
+# cluster robust se:
+model_parameters(negbinmodel, robust = TRUE, vcov_estimation = "vcovCL", 
+                 vcov_args = list(type = "HC1", cluster=whan_data$warnumber))
+
+
+
 zero_inflated_model <- glmmTMB(form, 
-                               ziformula = ~  waraims2 + raceorrel
-                               ,  
+                               ziformula = ~ apcdum + waraims2 + finalprop,
                                data=whan_data, 
                                family=nbinom1(link='log')
                                
                                )
-# in this model, the effect of signing the geneva conventions is negative and 
-# significant.
+# in this model, the effect of signing the geneva conventions is negative and approaching
+# significance
 summary(zero_inflated_model)
 
 
